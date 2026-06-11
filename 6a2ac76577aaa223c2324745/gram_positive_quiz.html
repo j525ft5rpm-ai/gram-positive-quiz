@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>革兰阳性菌答题系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .option-btn {
+            transition: all 0.2s ease;
+        }
+
+        .option-btn:hover:not(:disabled) {
+            transform: translateX(4px);
+        }
+
+        .history-item {
+            border-left: 4px solid #e5e7eb;
+        }
+
+        .history-item.correct {
+            border-left-color: #10b981;
+        }
+
+        .history-item.wrong {
+            border-left-color: #ef4444;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-3xl">
+        <div id="start-page" class="text-center py-20">
+            <h1 class="text-4xl font-bold text-gray-800 mb-4">革兰阳性菌题库答题</h1>
+            <p class="text-gray-600 mb-3">共 <span id="total-questions">0</span> 道题目，答错的题目会重复出现直到答对为止</p>
+            <p id="data-tip" class="text-sm text-amber-600 mb-8 hidden"></p>
+            <button id="start-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg text-lg shadow-lg transition-all">
+                开始答题
+            </button>
+        </div>
+
+        <div id="quiz-page" class="hidden">
+            <div class="mb-6">
+                <div class="flex justify-between text-sm text-gray-600 mb-2">
+                    <span>答题进度</span>
+                    <span id="progress-text">0 / 0</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+                <div class="flex justify-between gap-4 mb-6">
+                    <h2 id="question-text" class="text-xl font-semibold text-gray-800"></h2>
+                    <span id="retry-badge" class="hidden shrink-0 self-start text-xs bg-amber-100 text-amber-700 px-3 py-1 rounded-full">错题重练</span>
+                </div>
+                <div id="options-container" class="space-y-3"></div>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <button id="restart-btn" class="text-gray-500 hover:text-gray-800 font-medium">
+                    重新开始
+                </button>
+                <button id="view-history-btn" class="text-blue-600 hover:text-blue-800 font-medium">
+                    查看答题历史
+                </button>
+            </div>
+        </div>
+
+        <div id="history-page" class="hidden">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">答题历史</h2>
+            <div id="history-container" class="space-y-4"></div>
+            <div class="mt-6 flex justify-between">
+                <button id="back-to-quiz-btn" class="text-blue-600 hover:text-blue-800 font-medium">
+                    返回答题
+                </button>
+                <button id="restart-from-history-btn" class="text-gray-500 hover:text-gray-800 font-medium">
+                    重新开始
+                </button>
+            </div>
+        </div>
+
+        <div id="complete-page" class="hidden text-center py-20">
+            <div class="text-6xl mb-4">🎉</div>
+            <h2 class="text-3xl font-bold text-gray-800 mb-4">恭喜你！全部答对了！</h2>
+            <p id="complete-summary" class="text-gray-600 mb-8">你已经完成了所有题目的练习，太棒了！</p>
+            <div class="flex justify-center gap-4">
+                <button id="view-history-from-complete-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg text-lg shadow-lg transition-all">
+                    查看答题历史
+                </button>
+                <button id="restart-from-complete-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-8 rounded-lg text-lg transition-all">
+                    再练一次
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const sampleQuestions = [
+            {
+                id: 1,
+                question: "下列哪种细菌属于革兰阳性球菌？",
+                options: [
+                    { key: "A", text: "大肠埃希菌" },
+                    { key: "B", text: "金黄色葡萄球菌" },
+                    { key: "C", text: "铜绿假单胞菌" },
+                    { key: "D", text: "志贺菌" }
+                ],
+                answer: "B"
+            },
+            {
+                id: 2,
+                question: "链球菌感染后可能引起的免疫性疾病是？",
+                options: [
+                    { key: "A", text: "风湿热" },
+                    { key: "B", text: "霍乱" },
+                    { key: "C", text: "伤寒" },
+                    { key: "D", text: "百日咳" }
+                ],
+                answer: "A"
+            },
+            {
+                id: 3,
+                question: "葡萄球菌产生的哪种酶常用于鉴别金黄色葡萄球菌？",
+                options: [
+                    { key: "A", text: "氧化酶" },
+                    { key: "B", text: "脲酶" },
+                    { key: "C", text: "凝固酶" },
+                    { key: "D", text: "DNA聚合酶" }
+                ],
+                answer: "C"
+            }
+        ];
+
+        let allQuestions = [];
+        let answered = {};
+        let wrongQuestionIds = new Set();
+        let history = [];
+        let currentQuestion = null;
+
+        const startPage = document.getElementById("start-page");
+        const quizPage = document.getElementById("quiz-page");
+        const historyPage = document.getElementById("history-page");
+        const completePage = document.getElementById("complete-page");
+        const startBtn = document.getElementById("start-btn");
+        const restartBtn = document.getElementById("restart-btn");
+        const restartFromHistoryBtn = document.getElementById("restart-from-history-btn");
+        const restartFromCompleteBtn = document.getElementById("restart-from-complete-btn");
+        const viewHistoryBtn = document.getElementById("view-history-btn");
+        const backToQuizBtn = document.getElementById("back-to-quiz-btn");
+        const viewHistoryFromCompleteBtn = document.getElementById("view-history-from-complete-btn");
+        const questionText = document.getElementById("question-text");
+        const optionsContainer = document.getElementById("options-container");
+        const progressText = document.getElementById("progress-text");
+        const progressBar = document.getElementById("progress-bar");
+        const historyContainer = document.getElementById("history-container");
+        const totalQuestionsEl = document.getElementById("total-questions");
+        const dataTip = document.getElementById("data-tip");
+        const retryBadge = document.getElementById("retry-badge");
+        const completeSummary = document.getElementById("complete-summary");
+
+        function createDefaultOptions(answer) {
+            const keys = ["A", "B", "C", "D", "E"];
+            const normalizedAnswer = String(answer ?? "").trim().toUpperCase();
+
+            if (normalizedAnswer && !keys.includes(normalizedAnswer)) {
+                keys.push(normalizedAnswer);
+            }
+
+            return keys.map(key => ({ key, text: `选项 ${key}` }));
+        }
+
+        function normalizeQuestion(rawQuestion, index) {
+            const answer = String(rawQuestion.answer ?? "").trim().toUpperCase();
+            const rawOptions = Array.isArray(rawQuestion.options) ? rawQuestion.options : [];
+            const options = rawOptions.length > 0
+                ? rawOptions.map(option => ({
+                    key: String(option.key ?? "").trim().toUpperCase(),
+                    text: String(option.text ?? "")
+                })).filter(option => option.key && option.text)
+                : createDefaultOptions(answer);
+
+            return {
+                id: rawQuestion.id ?? index + 1,
+                question: rawQuestion.question ?? "",
+                options,
+                answer
+            };
+        }
+
+        function isValidQuestion(question) {
+            return question.question && question.options.length > 0 && question.answer;
+        }
+
+        async function loadQuestions() {
+            try {
+                const response = await fetch("questions.json", { cache: "no-store" });
+                if (!response.ok) {
+                    throw new Error("questions.json 加载失败");
+                }
+
+                const loadedQuestions = await response.json();
+                allQuestions = loadedQuestions.map(normalizeQuestion).filter(isValidQuestion);
+
+                if (allQuestions.length === 0) {
+                    throw new Error("questions.json 中没有有效题目");
+                }
+            } catch (error) {
+                allQuestions = sampleQuestions;
+                dataTip.textContent = "未检测到可用的 questions.json，当前使用内置示例题库。";
+                dataTip.classList.remove("hidden");
+                console.warn(error);
+            }
+
+            resetQuizState();
+            totalQuestionsEl.textContent = allQuestions.length;
+        }
+
+        function resetQuizState() {
+            answered = {};
+            history = [];
+            wrongQuestionIds = new Set();
+            currentQuestion = null;
+
+            allQuestions.forEach(question => {
+                answered[question.id] = false;
+            });
+
+            updateProgress();
+        }
+
+        function updateProgress() {
+            const correctCount = Object.values(answered).filter(Boolean).length;
+            const total = allQuestions.length;
+            progressText.textContent = `${correctCount} / ${total}`;
+            progressBar.style.width = total ? `${(correctCount / total) * 100}%` : "0%";
+        }
+
+        function loadNextQuestion() {
+            const remainingQuestions = allQuestions.filter(question => !answered[question.id]);
+
+            if (remainingQuestions.length === 0) {
+                showCompletePage();
+                return;
+            }
+
+            const wrongRemaining = remainingQuestions.filter(question => wrongQuestionIds.has(question.id));
+            const questionPool = wrongRemaining.length > 0 ? wrongRemaining : remainingQuestions;
+            const randomIndex = Math.floor(Math.random() * questionPool.length);
+            currentQuestion = questionPool[randomIndex];
+
+            questionText.textContent = `${currentQuestion.id}. ${currentQuestion.question}`;
+            retryBadge.classList.toggle("hidden", !wrongQuestionIds.has(currentQuestion.id));
+            optionsContainer.innerHTML = "";
+
+            currentQuestion.options.forEach(option => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "option-btn w-full text-left p-4 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200";
+                button.dataset.key = option.key;
+                button.innerHTML = `<span class="font-medium mr-2">${option.key}.</span>${option.text}`;
+                button.addEventListener("click", handleOptionClick);
+                optionsContainer.appendChild(button);
+            });
+
+            updateProgress();
+        }
+
+        function handleOptionClick(event) {
+            const selectedButton = event.target.closest("button");
+            if (!selectedButton || !currentQuestion) {
+                return;
+            }
+
+            const userKey = selectedButton.dataset.key;
+            const correctKey = currentQuestion.answer;
+            const isCorrect = userKey === correctKey;
+            const optionButtons = optionsContainer.querySelectorAll("button");
+
+            optionButtons.forEach(button => {
+                button.disabled = true;
+                const buttonKey = button.dataset.key;
+
+                if (buttonKey === correctKey) {
+                    button.classList.remove("bg-gray-50", "hover:bg-gray-100", "border-gray-200");
+                    button.classList.add("bg-green-500", "text-white", "border-green-500");
+                } else if (buttonKey === userKey && !isCorrect) {
+                    button.classList.remove("bg-gray-50", "hover:bg-gray-100", "border-gray-200");
+                    button.classList.add("bg-red-500", "text-white", "border-red-500");
+                }
+            });
+
+            history.push({
+                id: currentQuestion.id,
+                question: currentQuestion.question,
+                options: currentQuestion.options,
+                userAnswer: userKey,
+                correctAnswer: correctKey,
+                isCorrect
+            });
+
+            if (isCorrect) {
+                answered[currentQuestion.id] = true;
+                wrongQuestionIds.delete(currentQuestion.id);
+            } else {
+                wrongQuestionIds.add(currentQuestion.id);
+            }
+
+            setTimeout(loadNextQuestion, 900);
+        }
+
+        function renderHistory() {
+            historyContainer.innerHTML = "";
+
+            if (history.length === 0) {
+                historyContainer.innerHTML = '<p class="text-gray-500 text-center">暂无答题记录</p>';
+                return;
+            }
+
+            history.forEach((item, index) => {
+                const div = document.createElement("div");
+                div.className = `history-item ${item.isCorrect ? "correct" : "wrong"} bg-white rounded-lg p-4 shadow-sm`;
+
+                const optionsHtml = item.options.map(option => {
+                    let optionClass = "text-gray-600";
+                    let tagHtml = "";
+
+                    if (option.key === item.correctAnswer) {
+                        optionClass = "text-green-600 font-medium";
+                        tagHtml = option.key === item.userAnswer
+                            ? '<span class="ml-2 text-xs text-green-500">你的选择，正确</span>'
+                            : '<span class="ml-2 text-xs text-green-500">正确答案</span>';
+                    } else if (option.key === item.userAnswer) {
+                        optionClass = "text-red-600 font-medium line-through";
+                        tagHtml = '<span class="ml-2 text-xs text-red-500">你的选择</span>';
+                    }
+
+                    return `
+                        <div class="py-1">
+                            <span class="${optionClass}">${option.key}. ${option.text}</span>
+                            ${tagHtml}
+                        </div>
+                    `;
+                }).join("");
+
+                div.innerHTML = `
+                    <h3 class="font-medium text-gray-800 mb-3">${index + 1}. ${item.question}</h3>
+                    <div class="pl-2">${optionsHtml}</div>
+                `;
+
+                historyContainer.appendChild(div);
+            });
+        }
+
+        function showStartPage() {
+            startPage.classList.remove("hidden");
+            quizPage.classList.add("hidden");
+            historyPage.classList.add("hidden");
+            completePage.classList.add("hidden");
+        }
+
+        function showQuizPage() {
+            startPage.classList.add("hidden");
+            quizPage.classList.remove("hidden");
+            historyPage.classList.add("hidden");
+            completePage.classList.add("hidden");
+        }
+
+        function showHistoryPage() {
+            startPage.classList.add("hidden");
+            quizPage.classList.add("hidden");
+            historyPage.classList.remove("hidden");
+            completePage.classList.add("hidden");
+            renderHistory();
+        }
+
+        function showCompletePage() {
+            startPage.classList.add("hidden");
+            quizPage.classList.add("hidden");
+            historyPage.classList.add("hidden");
+            completePage.classList.remove("hidden");
+
+            const correctAttempts = history.filter(item => item.isCorrect).length;
+            const wrongAttempts = history.length - correctAttempts;
+            completeSummary.textContent = `你已完成 ${allQuestions.length} 道题，共作答 ${history.length} 次，答错 ${wrongAttempts} 次。`;
+        }
+
+        function restartQuiz() {
+            resetQuizState();
+            showQuizPage();
+            loadNextQuestion();
+        }
+
+        startBtn.addEventListener("click", () => {
+            showQuizPage();
+            loadNextQuestion();
+        });
+
+        restartBtn.addEventListener("click", restartQuiz);
+        restartFromHistoryBtn.addEventListener("click", restartQuiz);
+        restartFromCompleteBtn.addEventListener("click", restartQuiz);
+        viewHistoryBtn.addEventListener("click", showHistoryPage);
+        backToQuizBtn.addEventListener("click", showQuizPage);
+        viewHistoryFromCompleteBtn.addEventListener("click", showHistoryPage);
+
+        loadQuestions();
+    </script>
+</body>
+</html>
